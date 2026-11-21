@@ -1,0 +1,10 @@
+# Build outputs (the compiled plugin goes in GitHub Releases, not in the repository)
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
+# Generated at runtime
+cameras.txt
+config.json
+__pycache__/
