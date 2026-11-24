@@ -37,14 +37,18 @@ Needs RL Career Hub (its Python is used to fetch the list) and BakkesMod.
 Download the latest `botcams-x.y.zip` from this repository's **Releases** page
 (it contains the compiled `botcams.dll`; the repository itself holds only the source).
 
-1. Copy the zip's contents to `%APPDATA%\rl-career-hub\botswap\`
-   (the plugin looks for `cameras.txt` there).
-2. Copy `botcams.dll` to `%APPDATA%\bakkesmod\bakkesmod\plugins\` and add this line
-   to `%APPDATA%\bakkesmod\bakkesmod\cfg\plugins.cfg`:
+1. Close Rocket League.
+2. Right-click the zip, **Extract All**, open the extracted folder.
+3. Double-click `install.bat`. It checks that RL Career Hub and BakkesMod are installed,
+   copies the files, enables the plugin and downloads the camera list, with an `[OK]` or
+   `[ERROR]` line for each step.
+4. Start Rocket League.
 
-       plugin load botcams
+By hand instead: create `%APPDATA%\rl-career-hub\botswap\` and put `cameras.py` in it,
+copy `botcams.dll` to `%APPDATA%\bakkesmod\bakkesmod\plugins\`, and add this line at the
+end of `%APPDATA%\bakkesmod\bakkesmod\cfg\plugins.cfg`:
 
-3. Restart Rocket League.
+    plugin load botcams
 
 The camera list downloads by itself the first time Rocket League loads the plugin, then
 again whenever it is a week old (one Liquipedia request, in the background). The new
