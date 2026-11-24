@@ -41,7 +41,8 @@ Download the latest `botcams-x.y.zip` from this repository's **Releases** page
 2. Right-click the zip, **Extract All**, open the extracted folder.
 3. Double-click `install.bat`. It checks that RL Career Hub and BakkesMod are installed,
    copies the files, enables the plugin and downloads the camera list, with an `[OK]` or
-   `[ERROR]` line for each step.
+   `[ERROR]` line for each step. If RL Career Hub is installed somewhere unusual and
+   can't be found, it asks you to paste its folder.
 4. Start Rocket League.
 
 By hand instead: create `%APPDATA%\rl-career-hub\botswap\` and put `cameras.py` in it,

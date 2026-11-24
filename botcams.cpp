@@ -81,6 +81,9 @@ static void refreshCameraList()
     fs::path list = folder / "cameras.txt";
     fs::path script = folder / "cameras.py";
     fs::path python = fs::path(local) / "Programs" / "RL Career Hub" / "resources" / "python" / "python.exe";
+    // install.bat writes where it found the hub's Python (the hub may be in another folder).
+    std::string saved;
+    if (std::ifstream in(folder / "python.txt"); std::getline(in, saved) && !saved.empty()) python = saved;
     std::error_code ec;
     if (!fs::exists(script, ec) || !fs::exists(python, ec)) return;
     if (fs::exists(list, ec) && fs::file_time_type::clock::now() - fs::last_write_time(list, ec) < std::chrono::hours(24 * 7)) return;
