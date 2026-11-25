@@ -14,10 +14,12 @@ keeps the list already on disk.
 Self-check: python cameras.py   (add --fetch to force a download)
 """
 
+import base64
 import gzip
 import html
 import json
 import re
+import ssl
 import time
 import urllib.request
 from pathlib import Path
@@ -47,12 +49,30 @@ def parse(page_html):
     return cameras
 
 
+def tls_context():
+    """Trust only root CAs on Windows: its store also holds old intermediates,
+    and OpenSSL picks an expired one for Liquipedia's certificate chain."""
+    if not hasattr(ssl, "enum_certificates"):
+        return ssl.create_default_context()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    roots = ssl.enum_certificates("ROOT")
+    if not roots:
+        return ssl.create_default_context()
+    for der, encoding, trusted in roots:
+        if encoding.startswith("x509") and trusted:
+            pem = base64.encodebytes(der).decode("ascii")
+            context.load_verify_locations(cadata=f"-----BEGIN CERTIFICATE-----\n{pem}-----END CERTIFICATE-----\n")
+    return context
+
+
 def download():
     # Liquipedia's API terms: a named client and gzip. No personal details in it.
     request = urllib.request.Request(URL, headers={
         "User-Agent": "RLCareerBotCams/1.0 (personal offline mod; one request per week)",
         "Accept-Encoding": "gzip"})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=15, context=tls_context()) as response:
         body = response.read()
         if response.headers.get("Content-Encoding") == "gzip":
             body = gzip.decompress(body)

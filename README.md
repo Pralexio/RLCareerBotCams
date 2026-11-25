@@ -25,7 +25,11 @@ Two parts, both outside the hub's own code:
    every player of the match, every two seconds while a match is on, with ball cam on.
    It never touches your own camera: free cam, RLCS view and player views work as usual;
    when you switch to a bot's view you see it in ball cam. It skips the local player and
-   spectators, and does nothing in online games.
+   spectators, and does nothing in online games. Ball cam is not static: a bot switches it
+   off when the ball is out of view and it is facing a corner or a mid-wall boost spot,
+   and back on the moment the ball is in front again. Each bot decides for itself, from
+   its own car's position and rotation. This runs twice a second, independently of the
+   two-second camera refresh.
 
 Names are compared without case, spaces or punctuation, so the hub's "Atow."
 finds Liquipedia's "Atow". A player who is not on the list gets the `*` line
@@ -70,6 +74,8 @@ back each time it starts, so this is redone automatically; you don't have to do 
 - One player by hand: edit his line in `cameras.txt` (overwritten at the next weekly download).
 - BakkesMod console: `botcams_apply` applies now and prints how many players were set,
   `botcams_enabled 0` turns the plugin off, `botcams_ballcam 0` leaves the bots' ball cam alone.
+- Human-like ball cam: `botcams_smart_ballcam 0` goes back to ball cam always on;
+  `botcams_human_fov 70` narrows the view cone used for the decision (90 degrees by default).
 - Tactic keys: `botcams_tactic_down_key B` / `botcams_tactic_up_key V` (any key name), or
   `botcams_tactic_keys 0` to leave the hub's keys alone. These settings are saved.
 

@@ -10,6 +10,7 @@
 //     atow 110 100 -3.0 270 0.40 4.20 1.40     name, lower case, letters and digits only
 //
 // Console: botcams_apply (apply now), botcams_enabled 0|1, botcams_ballcam 0|1 (bots in ball cam),
+// botcams_smart_ballcam 0|1 (ball cam off while looking at a corner), botcams_human_fov 90 (view cone),
 // botcams_tactic_keys 0|1, botcams_tactic_down_key N, botcams_tactic_up_key M (hub tactics off 1 and 2).
 // Build: build.bat beside this file.
 
@@ -19,8 +20,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -34,13 +38,50 @@ public:
     void onLoad() override;
     void apply(bool reload, bool log);
     void tick();
+    void tickBallCam();
+    void updateBallCam();
     void moveTacticKeys();
 
 private:
     std::map<std::string, ProfileCameraSettings> cameras;
 };
 
-BAKKESMOD_PLUGIN(BotCams, "Pro cameras for bots", "1.0", PLUGINTYPE_FREEPLAY)
+BAKKESMOD_PLUGIN(BotCams, "Pro cameras for bots", "1.1", PLUGINTYPE_FREEPLAY)
+
+// Ball-cam decisions, in the car's own frame. Unreal rotators are 1/65536 of a
+// turn per unit, so 180 degrees is 32768 units.
+static constexpr double pi = 3.14159265358979323846;
+
+struct Vec3 { double x, y, z; };
+
+static double length(const Vec3& v)
+{
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+static Vec3 forwardOf(const Rotator& rotation)
+{
+    double pitch = rotation.Pitch * pi / 32768.0;
+    double yaw = rotation.Yaw * pi / 32768.0;
+    double cp = std::cos(pitch);
+    return { cp * std::cos(yaw), cp * std::sin(yaw), std::sin(pitch) };
+}
+
+static bool inView(const Vector& from, const Vec3& forward, const Vector& target, double maxAngle)
+{
+    Vec3 to{ target.X - from.X, target.Y - from.Y, target.Z - from.Z };
+    double d = length(to), f = length(forward);
+    if (d < 0.001 || f < 0.000001) return false;
+    double cosine = (to.x * forward.x + to.y * forward.y + to.z * forward.z) / (d * f);
+    cosine = std::clamp(cosine, -1.0, 1.0);
+    return std::acos(cosine) <= maxAngle * pi / 180.0;
+}
+
+// Corners and mid-wall spots: where a player often looks while the ball is behind.
+static const std::array<Vector, 6> strategicPositions{ {
+    {  3072.f, -4096.f, 73.f }, {  3584.f,     0.f, 73.f }, {  3072.f,  4096.f, 73.f },
+    { -3072.f,  4096.f, 73.f }, { -3584.f,     0.f, 73.f }, { -3072.f, -4096.f, 73.f }
+} };
 
 static std::string slug(const std::string& name)
 {
@@ -143,6 +184,8 @@ void BotCams::onLoad()
     gameWrapper->SetTimeout([this](GameWrapper*) { moveTacticKeys(); }, 5.0f);
     cvarManager->registerCvar("botcams_enabled", "1", "Give bots the camera of the pro they are named after", true, true, 0, true, 1);
     cvarManager->registerCvar("botcams_ballcam", "1", "Bots play in ball cam (seen when spectating their view)", true, true, 0, true, 1);
+    cvarManager->registerCvar("botcams_smart_ballcam", "1", "Human-like ball cam: off when the ball is out of view and a corner is ahead", true, true, 0, true, 1);
+    cvarManager->registerCvar("botcams_human_fov", "90", "View cone in degrees used for the ball-cam decision", true, true, 10.f, true, 180.f);
     cvarManager->registerNotifier("botcams_apply", [this](std::vector<std::string>) { apply(true, true); },
                                   "Apply the pro cameras to the players of this match now", PERMISSION_ALL);
     // Each kickoff: read the file again, it may have been refreshed since the game started.
@@ -150,6 +193,7 @@ void BotCams::onLoad()
         gameWrapper->SetTimeout([this](GameWrapper*) { apply(true, true); moveTacticKeys(); }, 1.0f);
     });
     tick();
+    tickBallCam();
 }
 
 // The kickoff alone comes too late: the cars are on screen well before the first
@@ -158,6 +202,14 @@ void BotCams::tick()
 {
     apply(false, false);
     gameWrapper->SetTimeout([this](GameWrapper*) { tick(); }, 2.0f);
+}
+
+// Ball cam changes much faster than camera settings: a corner or the ball comes
+// into view between two camera ticks, so the decision runs on its own timer.
+void BotCams::tickBallCam()
+{
+    updateBallCam();
+    gameWrapper->SetTimeout([this](GameWrapper*) { tickBallCam(); }, 0.5f);
 }
 
 void BotCams::apply(bool reload, bool log)
@@ -182,13 +234,47 @@ void BotCams::apply(bool reload, bool log)
         pri.SetCameraSettings(found->second);
         // The game reads the settings off this actor where a player has one.
         CameraSettingsActorWrapper actor = pri.GetPersistentCamera();
-        if (actor) {
-            actor.SetProfileSettings(found->second);
-            // Ball cam on, as pros play: what a spectator sees in this player's view.
-            // The spectator's own camera (free, RLCS view...) is never touched.
-            if (cvarManager->getCvar("botcams_ballcam").getBoolValue()) actor.SetUsingSecondaryCamera(true);
-        }
+        if (actor) actor.SetProfileSettings(found->second);
         set++;
     }
     if (log) cvarManager->log("botcams: camera set on " + std::to_string(set) + " players");
+    updateBallCam();
+}
+
+// Decide ball cam for each bot from its own car, so every watched bot behaves
+// like a player. Ball cam stays on unless the ball is out of view while the car
+// is pointed at a corner or a mid-wall boost spot. The spectator's own camera
+// (free, RLCS view...) is never touched, and neither is the local player's.
+void BotCams::updateBallCam()
+{
+    if (!cvarManager->getCvar("botcams_enabled").getBoolValue()) return;
+    if (!cvarManager->getCvar("botcams_ballcam").getBoolValue()) return;  // 0: leave the bots' ball cam alone
+    if (gameWrapper->IsInOnlineGame()) return;
+    ServerWrapper game = gameWrapper->GetCurrentGameState();
+    if (!game) return;
+    BallWrapper ball = game.GetBall();
+    if (!ball) return;
+
+    Vector ballPos = ball.GetLocation();
+    double maxAngle = cvarManager->getCvar("botcams_human_fov").getFloatValue();
+    bool smart = cvarManager->getCvar("botcams_smart_ballcam").getBoolValue();
+
+    auto pris = game.GetPRIs();
+    for (int i = 0; i < pris.Count(); i++)
+    {
+        PriWrapper pri = pris.Get(i);
+        if (!pri || pri.IsLocalPlayerPRI() || pri.IsSpectator()) continue;
+        CarWrapper car = pri.GetCar();
+        if (!car) continue;
+
+        Vector carPos = car.GetLocation();
+        Vec3 forward = forwardOf(car.GetRotation());
+        bool useBallCam = true;
+        if (smart && !inView(carPos, forward, ballPos, maxAngle))
+            for (const Vector& spot : strategicPositions)
+                if (inView(carPos, forward, spot, maxAngle)) { useBallCam = false; break; }
+
+        CameraSettingsActorWrapper actor = pri.GetPersistentCamera();
+        if (actor) actor.SetUsingSecondaryCamera(useBallCam);
+    }
 }
