@@ -108,3 +108,9 @@ Camera settings come from Liquipedia (liquipedia.net/rocketleague), whose text i
 licensed CC BY-SA 3.0. Their API terms ask for an identified client and few
 requests; this makes one request a week. No Liquipedia data is included in this
 package: each install downloads its own copy.
+
+## License
+
+MIT (see `LICENSE`): you can reuse, modify and redistribute this mod, including in
+your own mod packs, as long as you keep the copyright notice. A link back to this
+repository is appreciated. This covers the code only, not the Liquipedia camera data.
